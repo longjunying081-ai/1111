@@ -138,7 +138,7 @@ function ExcavatorTracker_Enhanced()
     logPanel = uipanel(gl, 'Title', '日志输出', 'FontWeight', 'bold');
     logPanel.Layout.Row = 3; 
     logPanel.Layout.Column = 2;
-    logArea = uitextarea(logPanel, 'Editable', 'off', 'FontFamily', 'Courier', 'FontSize', 9);
+    logArea = uitextarea(logPanel, 'Editable', 'off', 'FontSize', 9);
     logArea.Position = [0 0 380 200];
     
     % --- 左下：追踪轨迹 ---
@@ -514,7 +514,7 @@ function ExcavatorTracker_Enhanced()
                 x(1), y(1), x(end), y(end), ...
                 sqrt((x(end)-x(1))^2 + (y(end)-y(1))^2));
             
-            text(0.1, 0.5, statsText, 'FontSize', 11, 'FontFamily', 'Courier', ...
+            text(0.1, 0.5, statsText, 'FontSize', 11, ...
                 'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'black', ...
                 'Padding', 10, 'VerticalAlignment', 'middle');
             
