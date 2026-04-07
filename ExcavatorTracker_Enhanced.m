@@ -5,6 +5,7 @@ function ExcavatorTracker_Enhanced()
     %   1. 暂停/恢复功能
     %   2. 实时性能监控（FPS、处理时间、置信度）
     %   3. 数据可视化导出（轨迹、速度、位移、统计）
+    %   4. 实时定位显示
     % =========================================================================
     
     % --- 1. 变量初始化 ---
@@ -55,13 +56,13 @@ function ExcavatorTracker_Enhanced()
 
     % --- 3. UI 界面设计 ---
     fig = uifigure('Name', '小车追踪系统 v11.0 (增强版)', ...
-        'Position', [100 100 1400 850], ...
+        'Position', [100 100 1400 900], ...
         'CloseRequestFcn', @(~,~) cleanupAndClose());
     
     % 主网格布局
-    gl = uigridlayout(fig, [3, 2]);
+    gl = uigridlayout(fig, [4, 2]);
     gl.ColumnWidth = {'2x', 380}; 
-    gl.RowHeight = {'1x', 150, 200};
+    gl.RowHeight = {'1x', 150, 180, 150};
     gl.Padding = [10 10 10 10];
     
     % --- 左侧：视频显示 ---
@@ -134,20 +135,40 @@ function ExcavatorTracker_Enhanced()
     confLabel = uilabel(perfPanelGrid, 'Text', '0%', 'FontColor', [0.1 0.45 0.7], 'FontWeight', 'bold');
     confLabel.Layout.Row = 3; confLabel.Layout.Column = 2;
     
+    % --- 右侧实时定位面板 ---
+    locPanel = uipanel(gl, 'Title', '实时定位', 'FontWeight', 'bold');
+    locPanel.Layout.Row = 3; 
+    locPanel.Layout.Column = 2;
+    locAx = uiaxes(locPanel);
+    locAx.Position = [10 10 360 160];
+    locAx.Title.String = '实时位置映射';
+    locAx.XLabel.String = 'X (mm)';
+    locAx.YLabel.String = 'Y (mm)';
+    grid(locAx, 'on');
+    hold(locAx, 'on');
+    axis(locAx, 'equal');
+    
+    % 初始化实时轨迹线和位置标记
+    hRealTimeTrack = [];
+    hCurrentPos = [];
+    
     % --- 右侧下方：日志区域 ---
     logPanel = uipanel(gl, 'Title', '日志输出', 'FontWeight', 'bold');
-    logPanel.Layout.Row = 3; 
+    logPanel.Layout.Row = 4; 
     logPanel.Layout.Column = 2;
     logArea = uitextarea(logPanel, 'Editable', 'off', 'FontSize', 9);
-    logArea.Position = [0 0 380 200];
+    logArea.Position = [0 0 380 150];
     
     % --- 左下：追踪轨迹 ---
     trackAx = uiaxes(gl); 
-    trackAx.Layout.Row = [2 3]; 
+    trackAx.Layout.Row = [2 4]; 
     trackAx.Layout.Column = 1;
-    trackAx.Title.String = '轨迹图';
+    trackAx.Title.String = '完整轨迹图';
+    trackAx.XLabel.String = 'X (mm)';
+    trackAx.YLabel.String = 'Y (mm)';
     grid(trackAx, 'on'); 
     hold(trackAx, 'on');
+    axis(trackAx, 'equal');
     
     % 初始化日志
     initializeLog();
@@ -211,7 +232,10 @@ function ExcavatorTracker_Enhanced()
         
         % 清空轨迹图
         cla(trackAx);
+        cla(locAx);
         hTrack = animatedline(trackAx, 'Color', 'r', 'LineWidth', 2.5, 'Marker', 'o', 'MarkerSize', 3);
+        hRealTimeTrack = animatedline(locAx, 'Color', 'b', 'LineWidth', 2, 'Marker', 'o', 'MarkerSize', 4);
+        hCurrentPos = plot(locAx, 0, 0, 'r*', 'MarkerSize', 20, 'LineWidth', 2);
         
         % 循环处理视频帧
         frameIdx = 0;
@@ -323,6 +347,26 @@ function ExcavatorTracker_Enhanced()
                         
                         % 绘制轨迹
                         addpoints(hTrack, kf_wX, kf_wY);
+                        
+                        % 更新实时定位显示
+                        addpoints(hRealTimeTrack, kf_wX, kf_wY);
+                        hCurrentPos.XData = kf_wX;
+                        hCurrentPos.YData = kf_wY;
+                        
+                        % 自动调整实时定位图的坐标范围
+                        if historyIdx > 1
+                            minX = min(historyData(1:historyIdx, 2));
+                            maxX = max(historyData(1:historyIdx, 2));
+                            minY = min(historyData(1:historyIdx, 3));
+                            maxY = max(historyData(1:historyIdx, 3));
+                            
+                            % 留出10%的边距
+                            margin_x = (maxX - minX) * 0.1;
+                            margin_y = (maxY - minY) * 0.1;
+                            
+                            xlim(locAx, [minX - margin_x, maxX + margin_x]);
+                            ylim(locAx, [minY - margin_y, maxY + margin_y]);
+                        end
                         
                         % 标记目标
                         frame = insertMarker(frame, pixelPos, '*', 'Color', 'yellow', 'Size', 15);
@@ -440,11 +484,6 @@ function ExcavatorTracker_Enhanced()
             grid on;
             axis equal;
             
-            % 添加起点和终点标记
-            plot(x(1), y(1), 'go', 'MarkerSize', 10, 'MarkerFaceColor', 'g', 'DisplayName', '起点');
-            plot(x(end), y(end), 'r*', 'MarkerSize', 15, 'DisplayName', '终点');
-            legend;
-            
             % ===== 子图2：速度曲线 =====
             subplot(2, 3, 2);
             plot(time, speed, 'r-', 'LineWidth', 1.5);
@@ -550,9 +589,8 @@ function ExcavatorTracker_Enhanced()
         fullMsg = sprintf('[%s] [%-8s] %s', timestamp, level, msg);
         
         % 写入文件
-        if ~isempty(fid)
+        if ~isempty(fid) && fid > 0
             fprintf(fid, '%s\n', fullMsg);
-            fflush(fid);
         end
         
         % 显示在 UI（保持最后50行）
@@ -596,7 +634,7 @@ function ExcavatorTracker_Enhanced()
         logMessage('系统关闭中...', 'SYSTEM');
         isProcessing = false;
         
-        if ~isempty(fid)
+        if ~isempty(fid) && fid > 0
             fclose(fid);
             logMessage(sprintf('日志已保存至: %s', logFile), 'SYSTEM');
         end
